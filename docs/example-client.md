@@ -4,30 +4,67 @@ The example client demonstrates the quota API through real HTTP requests. It doe
 
 ## Requirements
 
-- Node.js 22 or newer.
-- The backend running at `http://localhost:3000`, or an HTTP(S) URL supplied through `USAGE_API_BASE_URL`.
-- A newly provisioned account with no users, no request history, and zero usage for the current UTC month.
-- That account's API key, provided as `USAGE_API_KEY` or through a mounted file named by `USAGE_API_KEY_FILE`.
+- Docker Engine with the Docker Compose plugin.
+- A local `.env` file created from `.env.example`, with a unique PostgreSQL password and a random provisioning token of at least 32 characters.
+- No host PostgreSQL installation or exposed PostgreSQL port is needed.
 
-The client intentionally fails before making changes if the account already has users, request history, or usage. Provisioning and securely handing off a new account key are reserved for Phase 5B; this CLI never accepts or uses `PROVISIONING_TOKEN`.
+Compose starts PostgreSQL, then the migration/seed job, then the healthy backend, a one-shot account bootstrap, and finally the example CLI. The bootstrap is the only demo service that receives `PROVISIONING_TOKEN`; it provisions a brand-new account over HTTP. The CLI is a separate non-root service and receives only a read-only-mounted API key file. Both services exit after the demonstration while the backend and PostgreSQL remain running.
 
-## Build and run
+## Environment variables
 
-From the repository root, build both the backend and the client:
+- `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`: local database initialization settings. They stay inside Compose; PostgreSQL has no host-published port.
+- `PROVISIONING_TOKEN`: required by the existing backend account-provisioning endpoint and the dedicated bootstrap service. Generate a local value with `openssl rand -hex 32`. It is never provided to the CLI.
+- `PORT`: optional host port for the backend API; its default is `3000`.
+- `DEMO_API_BASE_URL`, `DEMO_SECRET_DIR`, `DEMO_CLIENT_UID`, and `DEMO_CLIENT_GID`: internal bootstrap settings defined by Compose. Keep their defaults unless changing the container user/mount together.
+- `USAGE_API_BASE_URL` and `USAGE_API_KEY_FILE`: client settings defined by Compose. The base URL uses internal Docker DNS (`http://backend:3000`); the key path points to the read-only shared secret volume.
+
+Do not put an account API key in `.env`, Compose, or a command-line argument. The bootstrap creates it at runtime and hands it to the client using an atomic file rename. The dedicated `demo_api_key` volume is separate from `postgres_data`; bootstrap deletes the prior key before each provisioning attempt, creates the directory as `0700`, and creates the final file as `0400`, owned by the CLI's `node` UID/GID. Bootstrap drops to that UID/GID before making the HTTP provisioning request and writing the key. The CLI mounts the volume read-only. Removing one-shot containers does not erase the volume, but the next bootstrap clears its old key before it can start a new client run.
+
+## First-time startup and repeated demonstrations
+
+From the repository root, create the ignored local environment file and generate local-only values:
 
 ```sh
-npm run build
+cp .env.example .env
+openssl rand -hex 32
 ```
 
-Provide the API key from a runtime secret file, then run the compiled client:
+Copy the generated random value into the `PROVISIONING_TOKEN` entry in `.env` and set a local-only `POSTGRES_PASSWORD`. Do not print or commit the completed `.env` file. Start the complete application and demo:
 
 ```sh
-export USAGE_API_KEY_FILE=/run/secrets/usage_account_api_key
-export USAGE_API_BASE_URL=http://localhost:3000
-npm run client:demo
+docker compose up --build -d
+docker compose ps -a
+docker compose logs demo-bootstrap example-client
 ```
 
-The mounted key file should be readable only by the intended user. As an alternative, supply `USAGE_API_KEY` through a secure runtime environment. Do not commit a key or put it in source code. The CLI never prints the key or request headers.
+`docker compose up --build -d` automatically launches one demo on first startup. It does not continually restart the completed one-shot jobs. To run the demo again with a newly provisioned account, remove only the finished one-shot containers and start the client service again:
+
+```sh
+docker compose rm -f demo-bootstrap example-client
+docker compose up -d example-client
+docker compose logs demo-bootstrap example-client
+```
+
+Compose starts the bootstrap dependency again before the CLI. Backend and PostgreSQL stay up. The new run uses a fresh API key and fresh account; it never resets old account usage. Each successful demo account remains in the database as a historical demo account. No existing account or database volume is removed.
+
+To clear only the stale key file without deleting any account or volume, run:
+
+```sh
+npm run demo:cleanup-secret
+```
+
+That command invokes the bootstrap image in clear-only mode and removes only `account-api-key` and its temporary handoff files from `demo_api_key`. Do not use `docker compose down -v`; it would delete persistent volumes.
+
+## Expected output
+
+The CLI prints each action, requested units, backend decision, rejection reason and violated level, plus account/user remaining allowances. Its final summary is:
+
+- Account: 45 used, 99,955 remaining on Pro.
+- Ahmad: 10 used, 990 remaining on Basic.
+- Sara: 35 used, 4,965 remaining on Premium.
+- Five unique history records: three accepted and two rejected. Exact retry adds no units or record.
+
+The user-level rejection is Ahmad's 25-unit request against Basic's 20-unit request maximum. The account-level rejection is Sara's 15-unit request while only 10 units remain on the 40-unit custom account plan. After switching the account to Pro, Sara's new 15-unit request succeeds.
 
 ## Demonstration sequence
 
@@ -50,7 +87,9 @@ Missing key configuration and unreadable key files produce actionable configurat
 
 ## Tests
 
-- `npm test` runs unit tests with a fake `fetch` implementation for request headers/bodies, missing configuration, quota decisions, plan switching, idempotent replay, final totals, and secret-safe errors/output.
-- With the Compose backend and PostgreSQL running, run `npm run build` and then `npm run test:client:integration` from the repository root. The separate host-side test harness provisions a dedicated account through the provisioning endpoint, passes only that account's API key to a child CLI process, verifies the real demonstration through authenticated HTTP APIs, then deletes only the account it created using a UUID-scoped command in the existing PostgreSQL container. The CLI process does not receive the provisioning token and never accesses PostgreSQL.
+- `npm run build` compiles backend TypeScript and the separate CLI TypeScript project. Runtime images do not include development dependencies.
+- `npm test` runs existing backend/CLI Vitest tests plus bootstrap tests for provisioning, missing configuration, permission bits, stale-key clearing, and secret-safe logs, along with Compose dependency and environment-isolation checks.
+- After `.env` is configured, `npm run test:compose:demo` performs a real two-run Compose demonstration. It verifies service health/exit codes, read-only secret handoff and permissions, no key or token in logs/client environment, both runs' expected usage, fresh account/key on rerun, unchanged pre-existing database rows, and continued presence/health of PostgreSQL and the backend. It intentionally leaves the two new demo accounts as history and does not delete volumes.
+- `docker compose exec -T backend npm run test:db` runs the existing backend database and concurrency suites. It does not change API contracts, quota rules, schema, migrations, or predefined plans.
 
-The CLI is not copied into or started by Docker Compose. Account provisioning automation and secret handoff remain out of scope until Phase 5B.
+The Compose CLI is a one-shot service; its logs remain available with `docker compose logs example-client` until that service container is removed for the next run.

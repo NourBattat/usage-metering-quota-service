@@ -58,5 +58,39 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  demo-bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: demo-bootstrap
+    environment:
+      DEMO_API_BASE_URL: http://backend:3000
+      DEMO_SECRET_DIR: /run/demo-secrets
+      DEMO_CLIENT_UID: "1000"
+      DEMO_CLIENT_GID: "1000"
+      PROVISIONING_TOKEN: ${PROVISIONING_TOKEN:?Set PROVISIONING_TOKEN in your local .env file or shell environment}
+    volumes:
+      - demo_api_key:/run/demo-secrets
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: "no"
+
+  example-client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: example-client
+    environment:
+      USAGE_API_BASE_URL: http://backend:3000
+      USAGE_API_KEY_FILE: /run/demo-secrets/account-api-key
+    volumes:
+      - demo_api_key:/run/demo-secrets:ro
+    depends_on:
+      demo-bootstrap:
+        condition: service_completed_successfully
+    restart: "no"
+
 volumes:
   postgres_data:
+  demo_api_key:
