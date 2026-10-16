@@ -19,7 +19,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["node", "scripts/migrate.mjs"]
+    command: ["sh", "-c", "node scripts/migrate.mjs && npm run seed"]
     environment:
       PGHOST: postgres
       PGPORT: 5432

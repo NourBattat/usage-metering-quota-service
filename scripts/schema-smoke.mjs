@@ -72,8 +72,9 @@ try {
     await client.query("UPDATE accounts SET account_plan_id = $1 WHERE id = $2", [accountPlanA, accountA]);
     await client.query("UPDATE accounts SET account_plan_id = $1 WHERE id = $2", [accountPlanB, accountB]);
     await client.query(`
-      INSERT INTO users (id, account_id, name, user_plan_id)
-      VALUES ($1, $3, 'User A', $5), ($2, $4, 'User B', $6)
+      INSERT INTO users (
+        id, account_id, name, user_plan_id, user_plan_owner_account_id
+      ) VALUES ($1, $3, 'User A', $5, $3), ($2, $4, 'User B', $6, $4)
     `, [userA, userB, accountA, accountB, userPlanA, userPlanB]);
 
     await client.query(`
