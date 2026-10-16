@@ -15,6 +15,22 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "scripts/migrate.mjs"]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-usage_metering}
+      PGUSER: ${POSTGRES_USER:-usage_metering}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your local .env file or shell environment}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: .
@@ -31,6 +47,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
