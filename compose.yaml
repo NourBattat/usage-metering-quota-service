@@ -42,6 +42,7 @@ services:
       PGDATABASE: ${POSTGRES_DB:-usage_metering}
       PGUSER: ${POSTGRES_USER:-usage_metering}
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your local .env file or shell environment}
+      PROVISIONING_TOKEN: ${PROVISIONING_TOKEN:?Set PROVISIONING_TOKEN in your local .env file or shell environment}
     ports:
       - "${PORT:-3000}:3000"
     depends_on:

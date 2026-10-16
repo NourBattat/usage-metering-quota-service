@@ -6,7 +6,7 @@ describe("GET /health", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = buildApp();
+    app = buildApp({ logger: false });
     await app.ready();
   });
 
@@ -24,7 +24,7 @@ describe("GET /health", () => {
 
 describe("GET /ready", () => {
   it("returns ready when the database query succeeds", async () => {
-    const app = buildApp(async () => undefined);
+    const app = buildApp({ databaseCheck: async () => undefined, logger: false });
     const response = await app.inject({ method: "GET", url: "/ready" });
 
     expect(response.statusCode).toBe(200);
@@ -33,8 +33,11 @@ describe("GET /ready", () => {
   });
 
   it("returns unavailable when the database query fails", async () => {
-    const app = buildApp(async () => {
-      throw new Error("Database unavailable");
+    const app = buildApp({
+      databaseCheck: async () => {
+        throw new Error("Database unavailable");
+      },
+      logger: false,
     });
     const response = await app.inject({ method: "GET", url: "/ready" });
 
