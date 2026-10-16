@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "vitest run tests/app.test.ts",
-    "test:db": "node scripts/schema-smoke.mjs && node scripts/seed-smoke.mjs && node scripts/plan-assignment-smoke.mjs && node scripts/account-api-smoke.mjs",
+    "test:db": "node scripts/schema-smoke.mjs && node scripts/seed-smoke.mjs && node scripts/plan-assignment-smoke.mjs && node scripts/account-api-smoke.mjs && node scripts/users-api-smoke.mjs && node scripts/plans-api-smoke.mjs && node scripts/plan-assignment-api-smoke.mjs",
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs"
   },

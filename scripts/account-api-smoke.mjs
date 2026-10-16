@@ -145,8 +145,14 @@ try {
       // The app may already be closed after the log inspection.
     }
   }
-  if (createdAccountIds.length > 0) {
-    await pool.query("DELETE FROM accounts WHERE id = ANY($1::uuid[])", [createdAccountIds]);
+  try {
+    if (createdAccountIds.length > 0) {
+      await pool.query("DELETE FROM accounts WHERE id = ANY($1::uuid[])", [createdAccountIds]);
+    }
+  } catch (error) {
+    console.error("Could not clean up integration accounts using the configured PostgreSQL pool:", error);
+    process.exitCode = 1;
+  } finally {
+    await pool.end();
   }
-  await pool.end();
 }

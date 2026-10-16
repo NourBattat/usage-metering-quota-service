@@ -56,16 +56,16 @@ try {
   try {
     await seedPredefinedPlans(client);
     await client.query(`
-      INSERT INTO accounts (id, name, api_key_hash)
+      INSERT INTO accounts (id, name, api_key_hash, account_plan_id)
       VALUES
-        ($1, 'Assignment Test Account A', repeat('d', 64)),
-        ($2, 'Assignment Test Account B', repeat('e', 64))
+        ($1, 'Assignment Test Account A', repeat('d', 64), (SELECT id FROM account_plans WHERE name = 'Starter' AND owner_account_id IS NULL)),
+        ($2, 'Assignment Test Account B', repeat('e', 64), (SELECT id FROM account_plans WHERE name = 'Starter' AND owner_account_id IS NULL))
     `, [accountA, accountB]);
     await client.query(`
-      INSERT INTO users (id, account_id, name)
+      INSERT INTO users (id, account_id, name, user_plan_id)
       VALUES
-        ($1, $3, 'Assignment Test User A'),
-        ($2, $4, 'Assignment Test User B')
+        ($1, $3, 'Assignment Test User A', (SELECT id FROM user_plans WHERE name = 'Basic' AND owner_account_id IS NULL)),
+        ($2, $4, 'Assignment Test User B', (SELECT id FROM user_plans WHERE name = 'Basic' AND owner_account_id IS NULL))
     `, [userA, userB, accountA, accountB]);
     await client.query(`
       INSERT INTO account_plans
@@ -174,27 +174,18 @@ try {
       );
     }, "23514");
 
-    await client.query(
-      "UPDATE accounts SET account_plan_id = NULL, account_plan_owner_account_id = NULL WHERE id = $1",
-      [accountA],
-    );
-    await client.query(
-      "UPDATE users SET user_plan_id = NULL, user_plan_owner_account_id = NULL WHERE id = $1",
-      [userA],
-    );
-    const removed = await client.query(`
-      SELECT account_plan_id, account_plan_owner_account_id,
-             user_plan_id, user_plan_owner_account_id
-      FROM accounts JOIN users ON users.account_id = accounts.id
-      WHERE accounts.id = $1 AND users.id = $2
-    `, [accountA, userA]);
-    assert(
-      removed.rows[0]?.account_plan_id === null
-        && removed.rows[0]?.account_plan_owner_account_id === null
-        && removed.rows[0]?.user_plan_id === null
-        && removed.rows[0]?.user_plan_owner_account_id === null,
-      "assigned plans can be removed by clearing both plan and owner columns",
-    );
+    await expectFailure("account cannot be left without an assigned plan", async () => {
+      await client.query(
+        "UPDATE accounts SET account_plan_id = NULL, account_plan_owner_account_id = NULL WHERE id = $1",
+        [accountA],
+      );
+    }, "23502");
+    await expectFailure("user cannot be left without an assigned plan", async () => {
+      await client.query(
+        "UPDATE users SET user_plan_id = NULL, user_plan_owner_account_id = NULL WHERE id = $1",
+        [userA],
+      );
+    }, "23502");
   } finally {
     await client.query("ROLLBACK");
   }

@@ -5,6 +5,9 @@ import { checkDatabaseConnection } from "./db/pool.js";
 import { pool } from "./db/pool.js";
 import { registerApiKeyAuthentication } from "./plugins/api-key-auth.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
+import { registerPlanRoutes } from "./routes/plans.js";
+import { registerPlanAssignmentRoutes } from "./routes/plan-assignments.js";
+import { registerUserRoutes } from "./routes/users.js";
 
 type BuildAppOptions = {
   database?: Pool;
@@ -33,6 +36,9 @@ export function buildApp(options: BuildAppOptions = {}) {
         },
       },
     },
+    ajv: {
+      customOptions: { removeAdditional: false, coerceTypes: false },
+    },
   });
 
   app.get("/health", async () => ({ status: "ok" }));
@@ -51,6 +57,9 @@ export function buildApp(options: BuildAppOptions = {}) {
     database,
     provisioningToken: options.provisioningToken,
   });
+  registerUserRoutes(app, { database });
+  registerPlanRoutes(app, { database });
+  registerPlanAssignmentRoutes(app, { database });
 
   return app;
 }

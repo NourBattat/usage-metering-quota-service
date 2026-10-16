@@ -47,10 +47,10 @@ try {
   await client.query("BEGIN");
   try {
     await client.query(`
-      INSERT INTO accounts (id, name, api_key_hash)
+      INSERT INTO accounts (id, name, api_key_hash, account_plan_id)
       VALUES
-        ($1, 'Schema Test Account A', repeat('a', 64)),
-        ($2, 'Schema Test Account B', repeat('b', 64))
+        ($1, 'Schema Test Account A', repeat('a', 64), (SELECT id FROM account_plans WHERE name = 'Starter' AND owner_account_id IS NULL)),
+        ($2, 'Schema Test Account B', repeat('b', 64), (SELECT id FROM account_plans WHERE name = 'Starter' AND owner_account_id IS NULL))
     `, [accountA, accountB]);
 
     await client.query(`
@@ -224,7 +224,7 @@ try {
 
     await expectConstraintFailure("plaintext API key rejected by hash check", async () => {
       await client.query(
-        "INSERT INTO accounts (name, api_key_hash) VALUES ('Invalid Key Account', 'plaintext-secret')",
+        "INSERT INTO accounts (name, api_key_hash, account_plan_id) VALUES ('Invalid Key Account', 'plaintext-secret', (SELECT id FROM account_plans WHERE name = 'Starter' AND owner_account_id IS NULL))",
       );
     }, "23514");
 

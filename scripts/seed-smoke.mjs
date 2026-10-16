@@ -41,7 +41,7 @@ try {
   await client.query("BEGIN");
   try {
     await client.query(
-      "INSERT INTO accounts (id, name, api_key_hash) VALUES ($1, 'Seed Smoke Account', repeat('c', 64))",
+      "INSERT INTO accounts (id, name, api_key_hash, account_plan_id) VALUES ($1, 'Seed Smoke Account', repeat('c', 64), (SELECT id FROM account_plans WHERE name = 'Starter' AND owner_account_id IS NULL))",
       [testAccountId],
     );
     await client.query(`
