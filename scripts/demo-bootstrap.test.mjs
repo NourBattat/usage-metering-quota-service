@@ -102,7 +102,12 @@ test("Compose separates bootstrap authority, client key file, and successful-sta
   assert.doesNotMatch(clientService, /PROVISIONING_TOKEN|POSTGRES_PASSWORD|PGPASSWORD/);
   assert.match(clientService, /USAGE_API_KEY_FILE: \/run\/demo-secrets\/account-api-key/);
   assert.match(clientService, /demo_api_key:\/run\/demo-secrets:ro/);
+  assert.match(clientService, /demo-bootstrap:\n\s+condition: service_completed_successfully/);
   assert.match(dockerfile, /FROM node:22-alpine AS demo-bootstrap/);
   assert.match(dockerfile, /FROM node:22-alpine AS example-client/);
   assert.match(dockerfile, /USER node\nENTRYPOINT \["node", "\/app\/dist-client\/cli.js"\]/);
+
+  const dockerignore = await readFile(new URL("../.dockerignore", import.meta.url), "utf8");
+  assert.match(dockerignore, /^\.env$/m);
+  assert.match(dockerignore, /^\.env\.\*$/m);
 });

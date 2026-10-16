@@ -183,6 +183,8 @@ export async function runExampleDemo({
     body: { plan_id: premiumPlan.id },
   });
   requireCondition(saraAssignment.body.plan.name === "Premium", "Sara was not assigned the Premium plan");
+  writeLine(`Created Ahmad (${ahmad.id}) and assigned Basic.`);
+  writeLine(`Created Sara (${sara.id}) and assigned Premium.`);
 
   const customPlanName = `CLI Demo ${requestIdFactory()}`;
   const customPlanResponse = await api.request<Plan>("/v1/plans/account", {
@@ -201,7 +203,7 @@ export async function runExampleDemo({
     method: "PATCH",
     body: { plan_id: customPlan.id },
   });
-  writeLine("Plans: Ahmad → Basic; Sara → Premium; account → custom 40-unit plan.");
+  writeLine(`Created and assigned account plan ${customPlan.name} (40 monthly units, 100 units per request).`);
 
   const decisions: Array<{ requestId: string; response: Consumption; expected: "accepted" | "rejected" }> = [];
   const decide = async (

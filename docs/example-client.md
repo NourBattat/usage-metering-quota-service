@@ -22,14 +22,17 @@ Do not put an account API key in `.env`, Compose, or a command-line argument. Th
 
 ## First-time startup and repeated demonstrations
 
-From the repository root, create the ignored local environment file and generate local-only values:
+From the repository root, create the ignored local environment file and set random local-only values without printing them:
 
 ```sh
 cp .env.example .env
-openssl rand -hex 32
+POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+PROVISIONING_TOKEN="$(openssl rand -hex 32)"
+sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/; s/^PROVISIONING_TOKEN=.*/PROVISIONING_TOKEN=${PROVISIONING_TOKEN}/" .env
+unset POSTGRES_PASSWORD PROVISIONING_TOKEN
 ```
 
-Copy the generated random value into the `PROVISIONING_TOKEN` entry in `.env` and set a local-only `POSTGRES_PASSWORD`. Do not print or commit the completed `.env` file. Start the complete application and demo:
+Do not print or commit the completed `.env` file. Start the complete application and demo:
 
 ```sh
 docker compose up --build -d
@@ -90,6 +93,7 @@ Missing key configuration and unreadable key files produce actionable configurat
 - `npm run build` compiles backend TypeScript and the separate CLI TypeScript project. Runtime images do not include development dependencies.
 - `npm test` runs existing backend/CLI Vitest tests plus bootstrap tests for provisioning, missing configuration, permission bits, stale-key clearing, and secret-safe logs, along with Compose dependency and environment-isolation checks.
 - After `.env` is configured, `npm run test:compose:demo` performs a real two-run Compose demonstration. It verifies service health/exit codes, read-only secret handoff and permissions, no key or token in logs/client environment, both runs' expected usage, fresh account/key on rerun, unchanged pre-existing database rows, and continued presence/health of PostgreSQL and the backend. It intentionally leaves the two new demo accounts as history and does not delete volumes.
-- `docker compose exec -T backend npm run test:db` runs the existing backend database and concurrency suites. It does not change API contracts, quota rules, schema, migrations, or predefined plans.
+- `npm run test:db:isolated` creates a unique temporary database in the running PostgreSQL service, applies migrations and seed, runs the full `test:db` suite with the test database selected, and removes only that temporary database even when tests fail. The populated application/demo database and its volume are never reset or used. Treat `npm run test:db` as an isolated-database-only command; do not run it directly against a populated application database.
+- To run `npm run test:client:integration`, load the ignored environment file into the current shell without echoing it (`set -a; . ./.env; set +a`), then unset the secrets after the command. The harness creates and removes only its own temporary account.
 
-The Compose CLI is a one-shot service; its logs remain available with `docker compose logs example-client` until that service container is removed for the next run.
+The Compose CLI is a one-shot service; its logs remain available with `docker compose logs example-client` until that service container is removed for the next run. If CLI execution fails after bootstrap, the mounted API key remains until a subsequent bootstrap clears it or `npm run demo:cleanup-secret` removes it. `docker compose stop` safely stops the stack without removing persistent PostgreSQL data; never use `docker compose down -v` for ordinary cleanup.

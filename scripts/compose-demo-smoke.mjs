@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 const projectDirectory = process.cwd();
 const accountIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -19,7 +19,12 @@ function run(command, args, options = {}) {
     ...options,
   });
   if (result.error || result.status !== 0) {
-    throw new Error(`${command} ${args[0] ?? ""} failed with exit code ${result.status ?? "unknown"}.`);
+    let detail = result.error?.message ?? result.stderr?.trim() ?? "";
+    for (const name of ["PROVISIONING_TOKEN", "POSTGRES_PASSWORD", "PGPASSWORD", "USAGE_API_KEY"]) {
+      const secret = process.env[name];
+      if (secret) detail = detail.replaceAll(secret, "[redacted]");
+    }
+    throw new Error(`${command} ${args[0] ?? ""} failed with exit code ${result.status ?? "unknown"}.${detail ? ` ${detail}` : ""}`);
   }
   return result.stdout;
 }
@@ -160,6 +165,18 @@ function checkClientFailureExit() {
   assert(!output.includes("PROVISIONING_TOKEN") && !output.includes("x-api-key"), "client failure output contains no authentication material");
 }
 
+function checkBootstrapFailureBlocksClient() {
+  const result = spawnSync("docker", [
+    "compose", "run", "--rm", "--no-deps",
+    "-e", "PROVISIONING_TOKEN=",
+    "--entrypoint", "node", "demo-bootstrap", "/app/scripts/demo-bootstrap.mjs",
+  ], { cwd: projectDirectory, encoding: "utf8", maxBuffer: 2 * 1024 * 1024 });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  assert(result.status === 1, "bootstrap exits nonzero when provisioning configuration is absent");
+  assert(output.includes("valid server-side PROVISIONING_TOKEN"), "bootstrap reports a clear non-secret configuration error");
+  assert(!output.includes("x-provisioning-token") && !output.includes("api_key"), "bootstrap failure output contains no credentials or headers");
+}
+
 async function waitForBackend() {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
@@ -226,7 +243,16 @@ async function verifyRun(knownDemoIds, newDemoIds, previousKeyDigest) {
 }
 
 async function main() {
-  const volumeBefore = run("docker", ["volume", "inspect", "usage-metering-quota-service-v2_postgres_data", "--format", "{{.Name}}"]);
+  const composeConfig = JSON.parse(compose("config", "--format", "json"));
+  const postgresVolumeName = composeConfig.volumes?.postgres_data?.name;
+  if (typeof postgresVolumeName !== "string" || postgresVolumeName.length === 0) {
+    throw new Error("Compose did not resolve the persistent PostgreSQL volume name.");
+  }
+  assert(
+    composeConfig.services["example-client"].depends_on["demo-bootstrap"].condition === "service_completed_successfully",
+    "Compose blocks example-client startup unless bootstrap exits successfully",
+  );
+  const volumeBefore = run("docker", ["volume", "inspect", postgresVolumeName, "--format", "{{.Name}}"]);
   const knownDemoIds = new Set(getDemoAccounts().map((account) => account.id));
   const newDemoIds = new Set();
   const baselineDataDigest = preservedDataDigest([]);
@@ -240,13 +266,24 @@ async function main() {
 
   const first = await verifyRun(knownDemoIds, newDemoIds);
   checkClientFailureExit();
+  checkBootstrapFailureBlocksClient();
+  const secretProbe = [
+    "const fs=require('node:fs');",
+    "try{fs.accessSync('/run/demo-secrets/account-api-key');process.exitCode=1}",
+    "catch{process.stdout.write('secret file absent')}"
+  ].join("");
+  const secretProbeOutput = run("docker", [
+    "compose", "run", "--rm", "--no-deps",
+    "--entrypoint", "node", "demo-bootstrap", "-e", secretProbe,
+  ]);
+  assert(secretProbeOutput.includes("secret file absent"), "failed bootstrap cleared the previous key and left no reusable file");
 
   compose("rm", "-f", "demo-bootstrap", "example-client");
   compose("up", "-d", "example-client");
   const second = await verifyRun(knownDemoIds, newDemoIds, first.keyDigest);
   assert(first.accountId !== second.accountId, "second demonstration uses a different fresh account");
   assert(preservedDataDigest([...newDemoIds]) === baselineDataDigest, "all PostgreSQL account, user, usage, and request data predating both demo runs is unchanged");
-  assert(run("docker", ["volume", "inspect", "usage-metering-quota-service-v2_postgres_data", "--format", "{{.Name}}"] ).trim() === volumeBefore.trim(), "the existing PostgreSQL named volume remains present");
+  assert(run("docker", ["volume", "inspect", postgresVolumeName, "--format", "{{.Name}}"] ).trim() === volumeBefore.trim(), "the existing PostgreSQL named volume remains present");
 
   const backend = inspectContainer("backend");
   const postgres = inspectContainer("postgres");

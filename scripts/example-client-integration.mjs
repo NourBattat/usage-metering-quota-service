@@ -18,6 +18,11 @@ function assert(condition, message) {
   console.log(`PASS ${message}`);
 }
 
+function readComposeSetting(name, fallback) {
+  if (process.env[name] !== undefined) return process.env[name];
+  return fallback;
+}
+
 async function runCli(apiKey) {
   const cliPath = fileURLToPath(new URL("../dist-client/cli.js", import.meta.url));
   const env = {
@@ -62,8 +67,8 @@ function deleteTemporaryAccount(id) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
     throw new Error("Temporary account ID is invalid; refusing database cleanup.");
   }
-  const user = process.env.POSTGRES_USER ?? "usage_metering";
-  const database = process.env.POSTGRES_DB ?? "usage_metering";
+  const user = readComposeSetting("POSTGRES_USER", "usage_metering");
+  const database = readComposeSetting("POSTGRES_DB", "usage_metering");
   return new Promise((resolve, reject) => {
     const child = spawn("docker", [
       "compose", "exec", "-T", "postgres", "psql",
