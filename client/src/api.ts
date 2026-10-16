@@ -42,9 +42,11 @@ export class QuotaApiClient {
 
     let response: Response;
     try {
-      response = await this.fetchImplementation(new URL(path.replace(/^\//, ""), this.baseUrl.href.endsWith("/")
+      const requestBase = this.baseUrl.href.endsWith("/")
         ? this.baseUrl
-        : new URL(`${this.baseUrl.href}/`), {
+        : new URL(`${this.baseUrl.href}/`);
+      const requestUrl = new URL(path.replace(/^\//, ""), requestBase);
+      response = await this.fetchImplementation(requestUrl, {
         method,
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
