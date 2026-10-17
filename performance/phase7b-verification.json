@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "phase7a_files_before": {
+    "performance/baseline.json": "d9a33639e4f532ce69ed1e5ecb409ba1c223b04c1859ef8e5bd9f645f4d33dea",
+    "performance/README.md": "e762f206a18cf654a37fabd2b4c0d90068bc5814ddffb0919141197cd0ef1f13",
+    "scripts/perf/driver.mjs": "c50933d7add788d04785ca616dabf2cdd0e9a6a3163a838dd8601b547025884e",
+    "scripts/perf/environment.mjs": "512e1e6df1ff37adbe1fc146c72d518d824fa8d87d38e32ea66830a68b0f586d",
+    "scripts/perf/metrics.mjs": "1c0d2a59fcc36b236efd4ab11bb6104b487aa602dfb16ccd47833f82ef05cdeb",
+    "scripts/perf/report.mjs": "975ea0fe131766d646ec737db025bf0edd583a5e3bb2b4ff4be697a2b3df6245"
+  },
+  "phase7a_files_after": {
+    "performance/baseline.json": "d9a33639e4f532ce69ed1e5ecb409ba1c223b04c1859ef8e5bd9f645f4d33dea",
+    "performance/README.md": "e762f206a18cf654a37fabd2b4c0d90068bc5814ddffb0919141197cd0ef1f13",
+    "scripts/perf/driver.mjs": "c50933d7add788d04785ca616dabf2cdd0e9a6a3163a838dd8601b547025884e",
+    "scripts/perf/environment.mjs": "512e1e6df1ff37adbe1fc146c72d518d824fa8d87d38e32ea66830a68b0f586d",
+    "scripts/perf/metrics.mjs": "1c0d2a59fcc36b236efd4ab11bb6104b487aa602dfb16ccd47833f82ef05cdeb",
+    "scripts/perf/report.mjs": "975ea0fe131766d646ec737db025bf0edd583a5e3bb2b4ff4be697a2b3df6245"
+  },
+  "phase7a_preserved": true
+}

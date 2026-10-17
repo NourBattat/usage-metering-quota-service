@@ -1,0 +1,81 @@
+{
+  "status": "PASS",
+  "checks": {
+    "build": "PASS",
+    "unit": "PASS",
+    "isolation": "PASS",
+    "database_regressions": "PASS",
+    "saved_results_validation": "PASS",
+    "production_diff": "PASS",
+    "cleanup": "PASS",
+    "main_preserved": "PASS",
+    "private_files_removed": "PASS",
+    "saved_artifacts_preserved": "PASS"
+  },
+  "started_at_utc": "2026-10-17T13:13:41.352Z",
+  "docker": {
+    "ServerVersion": "29.8.1",
+    "NCPU": 12,
+    "MemTotal": 8157081600,
+    "Driver": "overlayfs",
+    "OSType": "linux",
+    "Architecture": "x86_64"
+  },
+  "host": {
+    "node": "v22.23.2",
+    "cpu_models": [
+      "12th Gen Intel(R) Core(TM) i7-1255U"
+    ],
+    "cpu_count": 12,
+    "memory_bytes": 8157081600,
+    "kernel": "6.6.87.2-microsoft-standard-WSL2"
+  },
+  "containers": {
+    "postgres": {
+      "image": "postgres:17-alpine",
+      "image_id": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "nano_cpus": 1000000000,
+      "memory_bytes": 536870912,
+      "log_driver": "json-file"
+    },
+    "backend": {
+      "image": "usage-perf-d65b313c31ab-backend:phase7c",
+      "image_id": "sha256:df600a2e406b067d56aff343cd6419c60e22f8b5bfd0cf3e3a51657d26bf7c60",
+      "nano_cpus": 1000000000,
+      "memory_bytes": 268435456,
+      "log_driver": "json-file"
+    }
+  },
+  "backend_node": "v22.23.3",
+  "source_commit": "3ee1a72d3e9916704d64dd73a94ae50042802ef6",
+  "storage": "Disposable PostgreSQL tmpfs; no persistent volumes or host ports",
+  "main_container_start_times": {
+    "postgres": "2026-10-16T19:05:39.252752631Z",
+    "backend": "2026-10-16T23:21:16.985596464Z"
+  },
+  "protected_files_before": {
+    "performance/baseline.json": "d9a33639e4f532ce69ed1e5ecb409ba1c223b04c1859ef8e5bd9f645f4d33dea",
+    "performance/phase7b-tmpfs.json": "b19bd4848df0be7323df4b9a8c0b1ac55ee9c133aac1ba0d66d66e57e937885e",
+    "performance/phase7b-disk.json": "b61e30b41c0e0dc6cdcc737f955ce486f88998a6f36dc4764d361fb6bd22e5f6",
+    "performance/phase7b-verification.json": "b02c07cb3586dd38ce8a12210c6591dff556a748984c7a06cb643ac2ecff6646",
+    "performance/README.md": "e762f206a18cf654a37fabd2b4c0d90068bc5814ddffb0919141197cd0ef1f13",
+    "performance/phase7b-report.md": "95b1772ac247904411347499e48a1910ab357c7a4749b889a8ae776acd19d5f5",
+    "src/routes/consumptions.ts": "02f6d29e124cc68a731cb2a201084d27f9220b68fc3c6270af1527e907adc850",
+    "src/db/pool.ts": "fe47caf9b941e11195181951f8eecadbd6581b865729d18abcfe9c3286f70bc8",
+    "Dockerfile": "bc813715b132aa524a5560686227891e2ac1415312279c9a21bfbf8d95af2f98",
+    "compose.yaml": "84338c205a2ef77cd788ae8557032d7db55d52b72fab9a6b61d5eea72633f213"
+  },
+  "protected_files_after": {
+    "performance/baseline.json": "d9a33639e4f532ce69ed1e5ecb409ba1c223b04c1859ef8e5bd9f645f4d33dea",
+    "performance/phase7b-tmpfs.json": "b19bd4848df0be7323df4b9a8c0b1ac55ee9c133aac1ba0d66d66e57e937885e",
+    "performance/phase7b-disk.json": "b61e30b41c0e0dc6cdcc737f955ce486f88998a6f36dc4764d361fb6bd22e5f6",
+    "performance/phase7b-verification.json": "b02c07cb3586dd38ce8a12210c6591dff556a748984c7a06cb643ac2ecff6646",
+    "performance/README.md": "e762f206a18cf654a37fabd2b4c0d90068bc5814ddffb0919141197cd0ef1f13",
+    "performance/phase7b-report.md": "95b1772ac247904411347499e48a1910ab357c7a4749b889a8ae776acd19d5f5",
+    "src/routes/consumptions.ts": "02f6d29e124cc68a731cb2a201084d27f9220b68fc3c6270af1527e907adc850",
+    "src/db/pool.ts": "fe47caf9b941e11195181951f8eecadbd6581b865729d18abcfe9c3286f70bc8",
+    "Dockerfile": "bc813715b132aa524a5560686227891e2ac1415312279c9a21bfbf8d95af2f98",
+    "compose.yaml": "84338c205a2ef77cd788ae8557032d7db55d52b72fab9a6b61d5eea72633f213"
+  },
+  "finished_at_utc": "2026-10-17T13:14:56.142Z"
+}

@@ -10,15 +10,20 @@
     "client:demo": "node dist-client/cli.js",
     "demo:cleanup-secret": "docker compose run --rm --no-deps demo-bootstrap node scripts/demo-bootstrap.mjs --clear-only",
     "start": "node dist/server.js",
-    "test": "vitest run tests/*.test.ts && node --test scripts/demo-bootstrap.test.mjs scripts/test-db-isolated.test.mjs",
+    "test": "vitest run tests/*.test.ts && node --test scripts/demo-bootstrap.test.mjs scripts/test-db-isolated.test.mjs scripts/perf/metrics.test.mjs scripts/perf/phase7b-summary.test.mjs scripts/perf/validate-results.test.mjs",
     "test:client:integration": "node scripts/example-client-integration.mjs",
+    "perf:baseline": "node scripts/perf/environment.mjs",
     "test:phase6c": "node scripts/phase6c-verify.mjs",
     "test:phase6b": "node scripts/phase6b-verify.mjs",
     "test:compose:demo": "node scripts/compose-demo-smoke.mjs",
     "test:db": "node scripts/schema-smoke.mjs && node scripts/seed-smoke.mjs && node scripts/plan-assignment-smoke.mjs && node scripts/account-api-smoke.mjs && node scripts/users-api-smoke.mjs && node scripts/plans-api-smoke.mjs && node scripts/plan-assignment-api-smoke.mjs && node scripts/consumption-api-smoke.mjs && node scripts/concurrency-smoke.mjs && node scripts/month-plan-smoke.mjs && node scripts/usage-api-smoke.mjs && node scripts/monthly-history-smoke.mjs && node scripts/request-history-smoke.mjs && node scripts/phase6a-regression.mjs && node scripts/phase6b-security.mjs && node scripts/phase6b-recovery.mjs",
     "test:db:isolated": "node scripts/test-db-isolated.mjs",
     "migrate": "node scripts/migrate.mjs",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "perf:analysis": "node scripts/perf/phase7b.mjs",
+    "perf:analysis:report": "node scripts/perf/phase7b-render.mjs",
+    "perf:validate": "node scripts/perf/validate-results.mjs",
+    "perf:verify": "node scripts/perf/phase7c-verify.mjs"
   },
   "dependencies": {
     "fastify": "^5.12.7",

@@ -1,0 +1,75 @@
+{
+  "status": "PASS",
+  "validated_at_utc": "2026-10-17T13:16:32.519Z",
+  "input_sha256": {
+    "performance/baseline.json": "d9a33639e4f532ce69ed1e5ecb409ba1c223b04c1859ef8e5bd9f645f4d33dea",
+    "performance/phase7b-tmpfs.json": "b19bd4848df0be7323df4b9a8c0b1ac55ee9c133aac1ba0d66d66e57e937885e",
+    "performance/phase7b-disk.json": "b61e30b41c0e0dc6cdcc737f955ce486f88998a6f36dc4764d361fb6bd22e5f6",
+    "performance/phase7b-verification.json": "b02c07cb3586dd38ce8a12210c6591dff556a748984c7a06cb643ac2ecff6646",
+    "performance/README.md": "e762f206a18cf654a37fabd2b4c0d90068bc5814ddffb0919141197cd0ef1f13",
+    "performance/phase7b-report.md": "95b1772ac247904411347499e48a1910ab357c7a4749b889a8ae776acd19d5f5"
+  },
+  "phase7a": {
+    "status": "PASS",
+    "completed_runs": 24,
+    "measured_requests": 12000,
+    "warmup_requests": 1200,
+    "accepted": 7503,
+    "rejected": 3000,
+    "replays": 1497,
+    "http_errors": 0,
+    "transport_errors": 0,
+    "timeouts": 0,
+    "warmup_accepted": 1050,
+    "warmup_rejected": 150,
+    "stored_original_decisions": 11703,
+    "charged_units_including_warmup": 8553
+  },
+  "phase7b_tmpfs": {
+    "status": "PASS",
+    "completed_runs": 44,
+    "measured_requests": 34219,
+    "warmup_requests": 2200,
+    "accepted": 32719,
+    "rejected": 1500,
+    "replays": 0,
+    "http_errors": 0,
+    "transport_errors": 0,
+    "timeouts": 0,
+    "warmup_accepted": 2050,
+    "warmup_rejected": 150,
+    "stored_original_decisions": 36419,
+    "charged_units_including_warmup": 34769
+  },
+  "phase7b_disk": {
+    "status": "PASS",
+    "completed_runs": 44,
+    "measured_requests": 31449,
+    "warmup_requests": 2200,
+    "accepted": 29949,
+    "rejected": 1500,
+    "replays": 0,
+    "http_errors": 0,
+    "transport_errors": 0,
+    "timeouts": 0,
+    "warmup_accepted": 2050,
+    "warmup_rejected": 150,
+    "stored_original_decisions": 33649,
+    "charged_units_including_warmup": 31999
+  },
+  "historical_reports_match_render": true,
+  "raw_files_unchanged": true,
+  "measurement_inconsistencies": [],
+  "targeted_rerun_needed": false,
+  "evidence_limits": [
+    "Original disposable databases and full HTTP decision bodies are not retained; persisted runtime audit summaries are validated, not the deleted databases.",
+    "Completion-window membership is reconstructed from completion-ordered latency samples and saved window counts; original completion timestamps are not retained.",
+    "Phase 7B warmup outcomes are inferred from saved original-decision audit counts and checked against the fixed workload; no separate per-trial warmup HTTP log is retained.",
+    "Archived Phase 6/7A documents describe status at their recording time; their later-phase-not-started wording is historical."
+  ],
+  "report_secret_scan": {
+    "status": "PASS",
+    "files_checked": 17,
+    "scope": "Known local environment values and credential-valued JSON/Markdown fields; not a universal secret detector."
+  }
+}
