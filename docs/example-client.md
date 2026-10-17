@@ -22,15 +22,9 @@ Do not put an account API key in `.env`, Compose, or a command-line argument. Th
 
 ## First-time startup and repeated demonstrations
 
-From the repository root, create the ignored local environment file and set random local-only values without printing them:
-
-```sh
-cp .env.example .env
-POSTGRES_PASSWORD="$(openssl rand -hex 32)"
-PROVISIONING_TOKEN="$(openssl rand -hex 32)"
-sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/; s/^PROVISIONING_TOKEN=.*/PROVISIONING_TOKEN=${PROVISIONING_TOKEN}/" .env
-unset POSTGRES_PASSWORD PROVISIONING_TOKEN
-```
+From the repository root, use the [README quick start](../README.md#quick-start)
+to create a new private `.env` without overwriting an existing file. Keep existing
+database credentials when using an existing volume; [setup](setup.md) explains why.
 
 Do not print or commit the completed `.env` file. Start the complete application and demo:
 
@@ -89,6 +83,10 @@ Each new decision gets a fresh random request ID. Only the explicit retry reuses
 Missing key configuration and unreadable key files produce actionable configuration errors. Connection failures identify the backend origin without showing credentials. Unexpected HTTP statuses and invalid JSON are reported with the HTTP method and endpoint only; response bodies and authentication headers are not copied into errors. The CLI exits nonzero when an HTTP/API contract or demonstration expectation is wrong.
 
 ## Tests
+
+See [testing instructions and side effects](testing.md) before selecting a target
+environment. In particular, the Compose harness can rebuild/recreate the backend;
+it is not a read-only verification of a valuable running stack.
 
 - `npm run build` compiles backend TypeScript and the separate CLI TypeScript project. Runtime images do not include development dependencies.
 - `npm test` runs existing backend/CLI Vitest tests plus bootstrap tests for provisioning, missing configuration, permission bits, stale-key clearing, and secret-safe logs, along with Compose dependency and environment-isolation checks.

@@ -1,22 +1,70 @@
 # Usage Metering and Quota Service
 
-A TypeScript, Fastify, and PostgreSQL service that makes account- and user-level usage decisions atomically. Docker Compose starts PostgreSQL, applies migrations and predefined plans, starts the backend, provisions a fresh demo account, and runs the CLI example.
+A Boot.dev final project in TypeScript, Fastify and PostgreSQL. It answers:
+**Can this user consume these units without exceeding either the company's quota or their own?**
+
+The service records the decision, charges both counters together when allowed,
+and safely replays retries. The emphasis is correctness under concurrent requests,
+account isolation and an understandable implementation: one backend and one database.
+
+## Features
+
+- Account provisioning, one API key per account, and multiple users per account.
+- Predefined and account-owned custom plans at account and user levels.
+- Monthly allowances and per-request limits enforced at both levels.
+- Atomic consumption, zero-charge rejections and durable request decisions.
+- Account-scoped idempotency: exact retry replays; changed parameters return 409.
+- UTC calendar months, preserved historical usage and plan changes without resets.
+- Current usage, monthly history and cursor-paginated decision history.
+- A real HTTP CLI demo, isolated regression/concurrency tests and measured benchmarks.
+
+There is no billing, refund system, end-user login or distributed infrastructure.
+
+## Technology stack
+
+Node.js 22+, TypeScript, Fastify, PostgreSQL 17, the `pg` SQL client,
+`node-pg-migrate`, Docker Compose, Vitest and Node's built-in test runner.
+The CLI is a separate TypeScript build using Node fetch.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  CLI[TypeScript CLI] -->|HTTP and account API key| API[Fastify backend]
+  API -->|Transactions and row locks| DB[(PostgreSQL)]
+  Migration[Migration and seed job] --> DB
+  Bootstrap[Demo bootstrap] -->|Provision account over HTTP| API
+  Bootstrap -->|Protected key file| CLI
+```
+
+PostgreSQL is the source of truth. The CLI displays decisions; it does not calculate
+quotas or access the database. Compose runs migration/seed and bootstrap as one-shot
+jobs around the two long-running services. See [architecture and transaction flow](docs/architecture.md)
+and [database tables and constraints](docs/database-design.md).
 
 ## Quick start
 
-Requirements: Docker Engine with the Compose plugin, Node.js 22+ and npm for local tests, and OpenSSL for generating local-only secrets.
-
-Clone the repository and open its root directory, then create a private local environment file and fill it with random values without printing those values:
+Requirements: Docker Engine with the Compose plugin, Node.js 22+ and npm for local
+build/tests, and a POSIX shell (Linux/WSL2 examples). No host PostgreSQL is required.
+Open the repository root and create a private `.env` **only for a new checkout**:
 
 ```sh
-cp .env.example .env
-POSTGRES_PASSWORD="$(openssl rand -hex 32)"
-PROVISIONING_TOKEN="$(openssl rand -hex 32)"
-sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/; s/^PROVISIONING_TOKEN=.*/PROVISIONING_TOKEN=${PROVISIONING_TOKEN}/" .env
-unset POSTGRES_PASSWORD PROVISIONING_TOKEN
+node --input-type=module <<'JS'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+const text = readFileSync('.env.example', 'utf8')
+  .replace(/^POSTGRES_PASSWORD=.*$/m, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}`)
+  .replace(/^PROVISIONING_TOKEN=.*$/m, `PROVISIONING_TOKEN=${randomBytes(32).toString('hex')}`);
+writeFileSync('.env', text, { flag: 'wx', mode: 0o600 });
+console.log('Created private .env; values were not printed.');
+JS
 ```
 
-`.env` is ignored by Git and excluded from Docker build context. Do not commit it. Start the complete stack and its first demo:
+The command refuses to overwrite an existing `.env`. Keep existing database
+credentials when using an existing volume. [Configuration details](docs/setup.md)
+explain every variable and the bootstrap secret handoff. Never commit `.env`.
+
+Start the complete stack and first demo:
 
 ```sh
 docker compose up --build -d
@@ -24,51 +72,63 @@ docker compose ps -a
 docker compose logs demo-bootstrap example-client
 ```
 
-The one-shot bootstrap and CLI should both exit with status 0. PostgreSQL and the backend remain running. Check API health from the host:
+`postgres` and `backend` stay running; `migrate`, `demo-bootstrap` and
+`example-client` should exit 0. The default API URL is `http://localhost:3000`;
+PostgreSQL has no published host port. Health checks:
 
 ```sh
-curl -fsS -o /dev/null -w '/health HTTP %{http_code}\n' http://localhost:3000/health
-curl -fsS -o /dev/null -w '/ready HTTP %{http_code}\n' http://localhost:3000/ready
+curl -fsS http://localhost:3000/health
+curl -fsS http://localhost:3000/ready
 ```
 
-The final demo totals are account 45 units, Ahmad 10 units on Basic, and Sara 35 units on Premium. The two quota rejections charge zero; the exact idempotent retry adds neither usage nor a history row.
+The demo creates Ahmad on Basic and Sara on Premium, shows user- and account-level
+rejections, switches the account plan through the API and retries an accepted
+request. Final usage is **45 account units, 10 Ahmad units and 35 Sara units**;
+five original decisions are stored. See [the complete CLI walkthrough](docs/example-client.md).
 
-## Run the demo again
-
-Completed one-shot containers do not rerun automatically. Remove only those containers, then start the client service again; Compose recreates bootstrap first and provisions a new account and key:
+To rerun with a fresh account, remove only the completed demo containers:
 
 ```sh
 docker compose rm -f demo-bootstrap example-client
 docker compose up -d example-client
-docker compose ps -a
 docker compose logs demo-bootstrap example-client
 ```
 
-Each demo account remains in PostgreSQL as historical data. No account usage is reset and no prior demo account is deleted. The `postgres_data` volume is persistent; **never use `docker compose down -v`** for routine shutdown or demonstration reruns.
+Prior demo accounts remain as history. To stop without deleting data, run
+`docker compose stop`. Never use `docker compose down -v` for routine cleanup;
+`postgres_data` holds the application database and `demo_api_key` holds the demo
+key handoff. `npm run demo:cleanup-secret` clears only the demo key files.
 
-## Services and secret handoff
+## API and domain rules
 
-- `postgres` stores the application data on the private Compose network and `postgres_data` volume; port 5432 is not published to the host.
-- `migrate` waits for healthy PostgreSQL, applies migrations, then seeds predefined plans in the existing order.
-- `backend` waits for the migration/seed job and healthy PostgreSQL; it is the only service publishing the API port.
-- `demo-bootstrap` waits for the healthy backend and provisions one account through its HTTP endpoint. Only this service and the backend receive `PROVISIONING_TOKEN`.
-- `example-client` waits for successful bootstrap, runs as the non-root `node` user, and receives only `USAGE_API_KEY_FILE` plus the internal backend URL. It receives neither the provisioning token nor database credentials.
+Protected endpoints use `x-api-key`. Account creation instead requires the
+administrator's `x-provisioning-token`; the CLI never receives that token.
+Only the account API-key hash is stored in PostgreSQL. There is no implemented
+key rotation/revocation endpoint. All account-specific queries use the authenticated
+account; a foreign user's UUID cannot select another account's data.
 
-The API key is passed through the dedicated `demo_api_key` named volume, separate from `postgres_data`. Bootstrap clears old key/temp files before provisioning, creates the directory with mode `0700`, writes to an exclusive temporary file, changes the file to mode `0400`, and atomically renames it to `account-api-key`. The key file and directory are owned by the CLI UID/GID. The CLI mounts the volume read-only. Bootstrap failure clears the previous key and, because of `service_completed_successfully`, prevents the client from starting. If the CLI itself fails after bootstrap succeeded, the key remains in the dedicated volume until the next bootstrap clears it or the operator runs the cleanup command below.
+A new account starts on Starter; each new user starts on Basic. The same user-plan
+definition may serve many users while each retains an independent allowance.
+[Predefined plan limits](docs/predefined-plans.md) are project assumptions.
+Custom definitions belong to one account; predefined definitions are read-only through the API.
 
-To clear only the demo key file and temporary handoff files without removing any account or volume:
+Consumption locks the account first, then the user and monthly counters. Both
+levels must allow the request. Accepted counter changes and history commit in
+one transaction; quota rejections save history without charging. The request ID
+is unique per account. Exact retries return the stored status/body with
+`Idempotency-Replayed: true`, including an original rejection.
 
-```sh
-npm run demo:cleanup-secret
-```
+New UTC months use new counter rows; no scheduled reset deletes prior usage.
+Plan changes affect subsequent new decisions without erasing usage. Remaining
+allowance is clamped to zero if the new limit is below consumption already used.
+Usage/history amounts are decimal strings to preserve BIGINT precision.
 
-Logs show actions and decisions, never authentication headers, API keys, provisioning tokens, or database passwords. The actual values live in the local ignored `.env` and the protected runtime handoff file; do not print either.
+The [API reference](docs/api-reference.md) documents all 20 route templates,
+request/response examples, error behavior and both history cursor formats.
 
-For the full scenario, expected output, and API call sequence, see [docs/example-client.md](docs/example-client.md). Predefined local plan assumptions are described in [docs/predefined-plans.md](docs/predefined-plans.md).
+## Build, tests and performance
 
-## Tests and verification
-
-Build backend and CLI TypeScript, and run the unit/security tests:
+From the repository root:
 
 ```sh
 npm ci
@@ -76,201 +136,60 @@ npm run build
 npm test
 ```
 
-Run all PostgreSQL integration tests on an isolated temporary database (requires the Compose PostgreSQL and backend services to be running):
+[Testing instructions](docs/testing.md) explain `test:db:isolated`,
+`test:client:integration` and `test:compose:demo`, their prerequisites and their
+side effects. Raw `test:db` must never target a populated application database.
+Phase 8A runs only build/unit/offline validation; the database/Docker tests are
+separately documented, not rerun as documentation verification.
+
+The validated [performance report](performance/final-report.md) covers 112 saved
+runs, **77,668 measured requests plus 5,600 warmups**, and no unexpected HTTP,
+transport or timeout failures in those runs. With one account/user on tmpfs,
+concurrency 1/50 measured 123.53/154.15 req/s, while P95 grew from 13.00 to 397.46 ms.
+At concurrency 50, one/ten-account rates were 149.96/102.12 on tmpfs and
+71.81/100.09 on disk. These are medians of three trials, not production capacity claims.
+
+P50/P95/P99 describe the latency at or below which 50/95/99% of trial samples fall.
+The pool remained 10 clients; sampled lock waits, pool queues, CPU throttling and
+WAL synchronization help explain why removing one shared lock does not guarantee
+higher throughput. tmpfs avoids persistent-disk costs; disk results still include
+caches and virtualization. Sustained workloads lasted about 60 seconds.
+Saved audits matched counters/history and rejected/replayed charge rules for tested cases.
 
 ```sh
-npm run test:db:isolated
-```
-
-This command generates a unique database name with a test-only prefix, creates that database inside the existing PostgreSQL service, runs migrations and seed there, runs `test:db` with only `PGDATABASE` overridden for the backend test process, and force-drops only that generated database in `finally`. The populated `POSTGRES_DB` demo database and its volume are not used, truncated, reset, or deleted. The lower-level `npm run test:db` command is an isolated-database-only suite; do not point it at a database containing real or demo data.
-
-Run the HTTP client integration test using a dedicated temporary account. Load the ignored `.env` into the current shell without printing it, then run the harness:
-
-```sh
-set -a
-. ./.env
-set +a
-npm run test:client:integration
-unset POSTGRES_PASSWORD PROVISIONING_TOKEN
-```
-
-The harness creates and later removes only its own temporary account. The Compose-level security and repeatability test executes two full demos on two additional fresh accounts and verifies volumes/data remain intact:
-
-```sh
-npm run test:compose:demo
-```
-
-It may take a few minutes. It leaves the two demo accounts as history and does not remove volumes. Inspect its services/logs with `docker compose ps -a` and `docker compose logs demo-bootstrap example-client`.
-
-## Safe shutdown
-
-Stop the services while preserving both named volumes:
-
-```sh
-docker compose stop
-```
-
-`docker compose down` also removes containers and the network but keeps named volumes unless `-v` is specified. Never run `docker compose down -v` when you need to preserve PostgreSQL data.
-
-## Authentication and internal errors
-
-Protected `/v1` endpoints use the account key in `x-api-key`. Account provisioning uses `POST /v1/accounts` with `x-provisioning-token`; the configured server-side token must be at least 32 characters. Provisioning returns the new account key once; PostgreSQL stores its SHA-256 hash. Treat the key as a secret.
-
-Unhandled HTTP 5xx errors return a generic message while preserving their HTTP status and standard response fields. Server logs retain safe HTTP status, request ID and SQLSTATE metadata, without raw database messages, SQL or connection credentials. Existing validation (4xx), quota rejection and explicitly defined operational error responses retain their own behavior.
-
-## Isolated clean acceptance verification
-
-From the repository root, with Node.js 22+, Docker/Compose access and the existing main stack running for read-only preservation checks:
-
-```sh
-npm run test:phase6c
-```
-
-This verifies a temporary copy of the **current working tree**, including uncommitted work. It installs dependencies, builds TypeScript and new Docker images without cache, and runs the regression suites and demo in a separate Compose project with temporary PostgreSQL storage. It does not rebuild or restart the main stack. Temporary test databases, containers, configuration and credentials are cleaned up without deleting persistent PostgreSQL volumes. New uniquely tagged test images remain locally. This is not a GitHub-clone verification.
-
-See [docs/phase-6c-acceptance.md](docs/phase-6c-acceptance.md) for scope, commands, acceptance evidence and remaining limitations. Full documentation completion and performance testing are separate phases.
-
-## Performance testing and results
-
-Performance was measured through real HTTP `POST /v1/consumptions` requests to
-Fastify and PostgreSQL in disposable Docker environments. The saved local
-WSL2/Docker runs comprise **112 completed trials, 77,668 measured requests and
-5,600 warmups**, with zero unexpected HTTP errors, transport errors or timeouts.
-Expected quota rejections are counted separately. The [final performance report](performance/final-report.md)
-contains every configuration, sustained windows references, environment details,
-correctness evidence, limitations and future experiment directions.
-
-### Methodology and baseline
-
-Each fixed-count trial uses 500 requests, one unit per request, 50 warmups and
-fresh account-owned fixtures. Results below are medians of three per-trial
-statistics; accepted/rejected/replay counts are per trial. Sorting three values
-and selecting the middle gives the median; percentile medians are not pooled
-percentiles. Within a trial, P50/P95/P99 use nearest rank `ceil(p*N)`.
-Monotonic timing includes the complete HTTP response and validation. Fixture
-setup, warmup and final SQL audits are excluded from measured time. Closed-loop
-workers wait for a response before their next request; no external network or
-open-loop overload capacity was measured.
-
-Phase 7A baseline, using tmpfs:
-
-| Scenario | Concurrency | req/s | P50 ms | P95 ms | P99 ms | Accepted | Rejected | Replays |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| A: Sequential | 1 | 123.53 | 7.77 | 13.00 | 15.44 | 500 | 0 | 0 |
-| B: Moderate | 5 | 149.74 | 29.93 | 44.66 | 81.68 | 500 | 0 | 0 |
-| C: Higher | 20 | 144.31 | 122.79 | 217.64 | 277.95 | 500 | 0 | 0 |
-| D: Peak baseline | 50 | 154.15 | 314.00 | 397.46 | 410.74 | 500 | 0 | 0 |
-| E: Shared quota / ten users | 20 | 170.66 | 114.34 | 144.09 | 169.22 | 250 | 250 | 0 |
-| F: Shared quota / same user | 20 | 153.23 | 113.86 | 188.44 | 408.20 | 250 | 250 | 0 |
-| G: Same-ID retries | 20 | 532.33 | 33.36 | 64.12 | 76.42 | 1 | 0 | 499 |
-| H: Quota rejection | 20 | 178.11 | 104.54 | 145.69 | 159.09 | 0 | 500 | 0 |
-
-Sequential to concurrency 50 increases throughput only 1.25x while P95 grows
-from 13.00 to 397.46 ms. E/F use a matched half-accepted/half-rejected mix.
-G measures one original write plus 499 replays, so its higher throughput does
-not represent ordinary new-consumption capacity. Replays preserve the original
-decision and do not add another charge or history row.
-
-### Accounts, storage, connections and locks
-
-Phase 7B controls the request mix: all 500 requests succeed, with three runs
-per configuration. A = one account/one user; B = one account/ten users;
-C = ten independent accounts/one user each. All share the same backend and
-PostgreSQL resources. The full report includes concurrency 1, 5, 20 and 50;
-this table shows concurrency 50. Wait counts are sampled peaks across runs;
-throughput, P95 and CPU are medians of per-trial statistics.
-
-| Storage | Layout | req/s | P95 ms | PG lock wait peak | Pool pending peak | PG CPU % of one core |
-|---|---|---:|---:|---:|---:|---:|
-| tmpfs | A | 149.96 | 393.06 | 9 | 40 | 73.96 |
-| tmpfs | B | 145.45 | 439.23 | 9 | 40 | 71.83 |
-| tmpfs | C | 102.12 | 632.96 | 2 | 40 | 100.48 |
-| disk | A | 71.81 | 788.44 | 9 | 41 | 49.44 |
-| disk | B | 80.13 | 738.16 | 9 | 41 | 56.48 |
-| disk | C | 100.09 | 778.20 | 2 | 40 | 103.85 |
-
-Observed: the pool reached 10/10 busy clients, and PostgreSQL lock waiting fell
-with independent accounts. PostgreSQL CPU approached its one-core quota and
-throttling occurred; disk samples also recorded WAL synchronization. Slightly
-above-100% short CPU estimates reflect approximate sampling, not changed limits.
-These observations do not isolate the precise contribution of each resource.
-Pool acquisition waits occur before a client is obtained; database lock waits
-hold an already-acquired client. More users share the same account lock.
-More accounts remove that common lock but still compete for CPU, connections
-and WAL/storage, explaining why lower lock contention need not improve throughput.
-
-The account lock is intentionally held through COMMIT to coordinate account/user
-quotas, request idempotency and plan changes atomically. This favors simple,
-understandable correctness while serializing consumption within an account.
-No lock strategy, pool size or production algorithm was optimized.
-
-Matched accepted/rejected workloads at concurrency 20 measured 144.54/164.79
-req/s on tmpfs and 77.47/77.16 on disk. Rejections skip counter increments but
-still authenticate, lock, persist history and commit; zero charge is not zero cost.
-Sustained runs lasted about 60 seconds at concurrency 20, capped at 20,000
-requests: one/ten-account rates were 126.11/93.48 req/s on tmpfs and
-77.88/95.54 on disk. All four passed final database checks.
-
-### Correctness and limitations
-
-Runtime SQL snapshots checked accepted sums against account/user monthly
-counters, both quotas, original decisions and stored response bodies. Rejections
-charged zero and retries charged once. The offline validator recalculates all
-saved samples, counts, per-account/user evidence and historical report tables.
-Original disposable databases and complete HTTP bodies are no longer retained;
-this is validation of saved at-run audit evidence, not an exhaustive proof under
-every failure or concurrency condition. See the separate [Phase 6 acceptance](docs/phase-6c-acceptance.md).
-
-The local environment used Node 22.23.3, PostgreSQL 17.11, Docker Engine 29.8.1,
-an i7-1255U host with 12 visible logical CPUs and 8,157,081,600 bytes reported
-memory. Backend/PostgreSQL/generator each had a one-CPU quota and memory limits
-of 256/512/256 MiB; the backend pool remained 10 clients. tmpfs does not represent
-persistent disk I/O. The dedicated disk volume still includes caches and Docker
-virtualization. Host activity, fixed storage order, sampling overhead and hardware
-limit comparisons. One-minute runs establish neither long-term endurance nor
-absence of leaks. No official SLA, performance target or production-scale capacity
-claim is provided.
-
-### Reproduce and validate
-
-Run from the repository root with Node.js 22+, npm and Docker Engine/Compose.
-For 7B observations, Docker must expose cgroup-v2 CPU/memory files. The main
-PostgreSQL/backend must already run under the default Compose identity for
-read-only preservation checks. No main-stack restart is part of these commands.
-
-```sh
-npm ci
 npm run perf:validate
-npm run perf:verify
-```
-
-`perf:validate` needs no Docker: it validates saved data and writes
-`performance/phase7c-validation.json` and `performance/final-report.md`.
-`perf:verify` runs `npm run build`, `npm test`, and `npm run test:db:isolated`
-inside an orchestration using a fresh disposable PostgreSQL/backend project,
-then validates saved data without generating benchmark traffic. It writes
-`performance/phase7c-verification.json`. The DB suite creates, migrates, seeds
-and removes only its generated test database inside that temporary cluster.
-
-To deliberately collect new measurements (save copies first: these overwrite
-the corresponding previous result files):
-
-```sh
+# Deliberate new measurements; save existing results before either command:
 npm run perf:baseline
 npm run perf:analysis
 ```
 
-7A writes `performance/baseline.json` and `performance/README.md`; 7B writes
-`performance/phase7b-{tmpfs,disk,verification}.json` and `phase7b-report.md`.
-`npm run perf:analysis:report` regenerates only the 7B Markdown.
-Benchmark credentials are generated privately; no API key is pasted into commands.
-Each environment has its own containers, database and network with no published
-ports. Cleanup removes its containers/network/private files; only 7B's newly
-created ownership-checked volume is deleted. Existing volumes and main data
-are checked for preservation. Test images remain cached. Phase 7C preserves
-all original 7A/7B measurements and reports.
+`perf:validate` is offline and regenerates validation/final-report outputs.
+Benchmark commands create isolated Docker stacks and overwrite their own prior
+result files. Requirements, resource limits, cleanup and evidence limits are in
+the [performance report](performance/final-report.md); they do not benchmark the main database.
 
-Possible future work is measurement first: profile transaction/lock time, vary
-CPU/pool limits in controlled tests, investigate observed WAL costs, compare
-open-loop generators and run longer bounded workloads. Any optimization must
-retain atomic quotas and idempotency. None was implemented in Phase 7.
+## Repository guide
+
+| Path | Purpose |
+|---|---|
+| `src/app.ts`, `src/server.ts` | Fastify setup, safe errors, health and HTTP startup |
+| `src/routes/`, `src/plugins/` | API handlers and account API-key authentication |
+| `src/db/`, `migrations/` | Connection pool, predefined plans and versioned schema |
+| `client/src/` | TypeScript HTTP client, configuration and business-action demo |
+| `scripts/`, `tests/` | Bootstrap, integration/concurrency/recovery and unit tests |
+| `scripts/perf/`, `performance/` | Benchmark/validation tools and actual results |
+| `Dockerfile`, `compose.yaml` | Images, startup dependencies and persistent volumes |
+| `docs/` | [Setup](docs/setup.md), [architecture](docs/architecture.md), [API](docs/api-reference.md), [database](docs/database-design.md), [testing](docs/testing.md) and audits |
+
+## Scope and remaining limits
+
+The [requirements status](docs/requirements-status.md) separates implementation,
+executed evidence and unresolved items. The supplied official Boot.dev specification
+has been reviewed; no missing mandatory core feature was identified. Public GitHub
+delivery and submission completion remain unverified.
+The [Phase 6 acceptance](docs/phase-6c-acceptance.md) is historical, bounded evidence.
+
+No production SLA, long-term endurance or disk crash-recovery guarantee is claimed.
+The service has no built-in TLS, rate limiting, API-key lifecycle API or production
+deployment automation. Single-account traffic intentionally serializes for correctness.
+GitHub publication and final delivery verification remain separate from this documentation review.
