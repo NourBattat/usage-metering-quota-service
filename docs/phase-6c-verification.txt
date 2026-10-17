@@ -1,0 +1,72 @@
+Actual final successful Phase 6C run excerpts
+Source: current local working tree copied without installed dependencies or build outputs.
+Not a remote GitHub clone.
+
+$ npm run test:phase6c
+PASS copied current working tree, including uncommitted changes, without Git, dependencies, builds or private environment files
+PASS captured original application full-row fingerprints, database inventory and PostgreSQL volume metadata
+COMMAND npm ci
+found 0 vulnerabilities
+EXIT 0
+COMMAND npm run build
+EXIT 0
+COMMAND npm test
+ Test Files  3 passed (3)
+      Tests  16 passed (16)
+# tests 18
+# pass 18
+# fail 0
+EXIT 0
+COMMAND docker compose build --no-cache
+EXIT 0
+COMMAND docker compose up --build -d
+EXIT 0
+PASS disposable PostgreSQL uses tmpfs and a different container from the main service
+PASS fresh runtime image compiled backend and migrations match the clean build (no source bind mount)
+PASS fresh application images omit private .env/Git/config files and raw source/tests from /app
+PASS real runner-owned database cleanup after controlled migrate command failure
+PASS real runner-owned database cleanup after controlled seed command failure
+PASS real runner-owned database cleanup after controlled suite command failure
+COMMAND npm run test:db:isolated
+Schema integration tests passed: 13 assertions
+Seed integration tests passed: 25 assertions
+Plan assignment regression tests passed: 18 assertions
+Account API integration tests passed: 22 assertions
+Plan API integration tests passed: 47 assertions
+Plan assignment integration tests passed: 39 assertions
+Consumption integration tests passed: 47 assertions
+Concurrency integration tests passed: 104 assertions
+UTC and plan integration tests passed: 79 assertions
+Usage API integration tests passed: 29 assertions
+Monthly history integration tests passed: 89 assertions
+Request history integration tests passed: 43 assertions
+Phase 6A focused regression tests passed: 15 assertions
+PASS real PostgreSQL internal message/detail/hint never appear in HTTP 500 or logs; only safe SQLSTATE and request ID are logged
+Phase 6B security tests passed: 11 assertions
+Phase 6B recovery tests passed: 23 assertions
+EXIT 0
+COMMAND npm run test:client:integration
+PASS backend account report confirms 45 accepted units
+PASS backend report confirms Ahmad used 10 units
+PASS backend report confirms Sara used 35 units
+Client integration tests passed: 18 assertions
+EXIT 0
+COMMAND npm run test:compose:demo
+PASS disposable PostgreSQL storage is configured as tmpfs
+PASS refreshed changed ephemeral backend port after image rebuild
+Compose demo verification passed: 83 assertions across two fresh accounts.
+EXIT 0
+PASS acceptance API origin refreshed after Compose demo restarts
+PASS migrations, bootstrap and CLI one-shot services all exited 0 on the fresh deployment
+PASS orchestrated bootstrap configuration failure blocks CLI startup and clears the old key
+PASS disposable GET /health HTTP 200
+PASS disposable GET /ready HTTP 200
+PASS disposable docker compose config (resolved secrets withheld)
+COMMAND docker compose ps -a
+EXIT 0
+PASS disposable containers/network removed without any volume deletion
+PASS main GET /health HTTP 200
+PASS main GET /ready HTTP 200
+PASS original application rows, database inventory, PostgreSQL volume and healthy backend preserved
+PASS private test configuration and demo handoff files removed
+Phase 6C clean working-tree deployment and acceptance verification passed.

@@ -1,7 +1,7 @@
 import Fastify from "fastify";
+import { STATUS_CODES } from "node:http";
 import type { FastifyServerOptions } from "fastify";
 import type { Pool, PoolClient } from "pg";
-import { checkDatabaseConnection } from "./db/pool.js";
 import { pool } from "./db/pool.js";
 import { registerApiKeyAuthentication } from "./plugins/api-key-auth.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
@@ -45,11 +45,29 @@ export function buildApp(options: BuildAppOptions = {}) {
     },
   });
 
+  app.setErrorHandler((error, request, reply) => {
+    const statusCode = typeof error === "object" && error !== null
+      && "statusCode" in error && typeof error.statusCode === "number"
+      ? error.statusCode : 500;
+    if (statusCode < 500) return reply.send(error);
+    // Infrastructure errors may contain connection details; never serialize or log them.
+    const databaseCode = typeof error === "object" && error !== null
+      && "code" in error && typeof error.code === "string" && /^[0-9A-Z]{5}$/.test(error.code)
+      ? error.code : undefined;
+    // Keep the bounded SQLSTATE diagnostic and request ID, never message/detail/hint/SQL.
+    request.log.error({ statusCode, ...(databaseCode ? { databaseCode } : {}) }, "Request failed");
+    return reply.code(statusCode).send({
+      statusCode,
+      error: STATUS_CODES[statusCode] ?? "Internal Server Error",
+      message: "Internal Server Error",
+    });
+  });
+
   app.get("/health", async () => ({ status: "ok" }));
 
   app.get("/ready", async (_request, reply) => {
     try {
-      await (options.databaseCheck ?? (() => checkDatabaseConnection()))();
+      await (options.databaseCheck ?? (() => database.query("SELECT 1")))();
       return reply.code(200).send({ status: "ready" });
     } catch {
       return reply.code(503).send({ status: "unavailable" });

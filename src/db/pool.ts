@@ -7,6 +7,11 @@ export const pool = new Pool({
   idleTimeoutMillis: 30_000,
 });
 
+// pg removes the failed idle client before emitting this event. Future queries reconnect.
+pool.on("error", () => {
+  console.error("An idle database connection failed; it was removed from the pool.");
+});
+
 export async function checkDatabaseConnection(): Promise<void> {
   await pool.query("SELECT 1");
 }

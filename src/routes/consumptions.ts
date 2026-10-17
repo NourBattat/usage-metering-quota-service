@@ -85,6 +85,12 @@ export function registerConsumptionRoutes(
       const requestId = request.body.request_id;
       const client = await database.connect();
       let transactionStarted = false;
+      let releaseError: Error | undefined;
+      const onConnectionError = () => {
+        releaseError = new Error("Consumption connection was interrupted");
+      };
+      // A checked-out pg client can emit an error while no query promise is active.
+      client.on("error", onConnectionError);
 
       try {
         await client.query("BEGIN");
@@ -312,11 +318,17 @@ export function registerConsumptionRoutes(
         return reply.code(responseStatus).send(storedOutcome.rows[0].response_body);
       } catch {
         if (transactionStarted) {
-          await client.query("ROLLBACK");
+          try {
+            await client.query("ROLLBACK");
+          } catch {
+            // A connection that cannot roll back must never be reused by another request.
+            releaseError = new Error("Consumption connection could not roll back");
+          }
         }
         return reply.code(500).send({ error: "Unable to process consumption request" });
       } finally {
-        client.release();
+        client.removeListener("error", onConnectionError);
+        client.release(releaseError);
       }
     },
   );

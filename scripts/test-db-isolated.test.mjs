@@ -50,6 +50,7 @@ async function runWithFakeDocker(t, { name, fail = "", applicationDatabase = "us
     encoding: "utf8",
     env,
   });
+  assert.ifError(result.error);
   const calls = (await readFile(log, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
   return { ...result, calls };
 }
@@ -66,6 +67,13 @@ test("unsafe names are rejected before any Docker operation", async t => {
 test("even a correctly shaped application database name is never created or dropped", async t => {
   const name = createIsolatedDatabaseName();
   const result = await runWithFakeDocker(t, { name, applicationDatabase: name });
+  assert.equal(result.status, 1);
+  assert.equal(result.calls.length, 1);
+  assert.ok(result.calls[0].includes("printenv"));
+});
+
+test("unknown application database configuration prevents all mutations", async t => {
+  const result = await runWithFakeDocker(t, { applicationDatabase: "" });
   assert.equal(result.status, 1);
   assert.equal(result.calls.length, 1);
   assert.ok(result.calls[0].includes("printenv"));

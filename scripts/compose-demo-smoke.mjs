@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const projectDirectory = process.cwd();
+let backendBaseUrl = process.env.USAGE_API_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 const accountIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 let assertionCount = 0;
 
@@ -72,20 +73,13 @@ function sqlUuidArray(ids) {
 
 function snapshotQuery(excludedAccountIds) {
   const excluded = sqlUuidArray(excludedAccountIds);
-  return `
-    SELECT json_build_object(
-      'accounts', (SELECT COALESCE(json_agg(json_build_array(id,name,created_at::text) ORDER BY id),'[]'::json)
-                   FROM accounts WHERE id <> ALL(${excluded})),
-      'users', (SELECT COALESCE(json_agg(json_build_array(id,account_id,name,user_plan_id) ORDER BY id),'[]'::json)
-                FROM users WHERE account_id <> ALL(${excluded})),
-      'account_usage', (SELECT COALESCE(json_agg(json_build_array(account_id,month::text,used_units::text) ORDER BY account_id,month),'[]'::json)
-                        FROM account_monthly_usage WHERE account_id <> ALL(${excluded})),
-      'user_usage', (SELECT COALESCE(json_agg(json_build_array(account_id,user_id,month::text,used_units::text) ORDER BY account_id,user_id,month),'[]'::json)
-                     FROM user_monthly_usage WHERE account_id <> ALL(${excluded})),
-      'requests', (SELECT COALESCE(json_agg(json_build_array(id,account_id,request_id,user_id,units::text,status,response_status) ORDER BY id),'[]'::json)
-                   FROM consumption_requests WHERE account_id <> ALL(${excluded}))
-    )::text;
-  `;
+  const tables = ["accounts", "users", "account_plans", "user_plans", "account_monthly_usage", "user_monthly_usage", "consumption_requests"];
+  const entries = tables.map(table => {
+    const owner = table === "accounts" ? "id" : table.endsWith("_plans") ? "owner_account_id" : "account_id";
+    const predicate = table.endsWith("_plans") ? `(${owner} IS NULL OR ${owner} <> ALL(${excluded}))` : `${owner} <> ALL(${excluded})`;
+    return `'${table}', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM ${table} t WHERE ${predicate})`;
+  });
+  return `SELECT jsonb_build_object(${entries.join(",")})::text;`;
 }
 
 function preservedDataDigest(excludedAccountIds) {
@@ -127,11 +121,13 @@ function inspectClientConfig() {
   const variableNames = environment.map((entry) => entry.split("=", 1)[0]);
   assert(!variableNames.includes("PROVISIONING_TOKEN"), "example-client environment does not contain the provisioning token");
   assert(!variableNames.includes("PGPASSWORD") && !variableNames.includes("POSTGRES_PASSWORD"), "example-client environment contains no database password");
+  assert(!["PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "DATABASE_URL", "POSTGRES_DB", "POSTGRES_USER"].some(name => variableNames.includes(name)), "example-client environment contains no database connection settings or usernames");
   assert(!variableNames.includes("USAGE_API_KEY"), "account API key is not exposed as a client environment variable");
   assert(variableNames.includes("USAGE_API_KEY_FILE"), "example-client receives only the account-key file path");
 
   const keyMount = (client.Mounts ?? []).find((mount) => mount.Destination === "/run/demo-secrets");
-  assert(keyMount?.Type === "volume" && keyMount.RW === false, "example-client mounts the dedicated secret volume read-only");
+  const expectedMountType = process.env.PHASE6B_DISPOSABLE === "1" ? "bind" : "volume";
+  assert(keyMount?.Type === expectedMountType && keyMount.RW === false, "example-client mounts the dedicated secret mount read-only");
   assert(client.Config.User === "node", "example-client runs as the unprivileged node user");
   return client;
 }
@@ -182,8 +178,8 @@ async function waitForBackend() {
   while (Date.now() < deadline) {
     try {
       const [health, ready] = await Promise.all([
-        fetch("http://localhost:3000/health"),
-        fetch("http://localhost:3000/ready"),
+        fetch(new URL("/health", backendBaseUrl)),
+        fetch(new URL("/ready", backendBaseUrl)),
       ]);
       if (health.status === 200 && ready.status === 200) return;
     } catch {
@@ -244,15 +240,20 @@ async function verifyRun(knownDemoIds, newDemoIds, previousKeyDigest) {
 
 async function main() {
   const composeConfig = JSON.parse(compose("config", "--format", "json"));
+  const disposable = process.env.PHASE6B_DISPOSABLE === "1";
   const postgresVolumeName = composeConfig.volumes?.postgres_data?.name;
-  if (typeof postgresVolumeName !== "string" || postgresVolumeName.length === 0) {
+  if (!disposable && (typeof postgresVolumeName !== "string" || postgresVolumeName.length === 0)) {
     throw new Error("Compose did not resolve the persistent PostgreSQL volume name.");
   }
   assert(
     composeConfig.services["example-client"].depends_on["demo-bootstrap"].condition === "service_completed_successfully",
     "Compose blocks example-client startup unless bootstrap exits successfully",
   );
-  const volumeBefore = run("docker", ["volume", "inspect", postgresVolumeName, "--format", "{{.Name}}"]);
+  const postgresBefore = inspectContainer("postgres");
+  if (disposable) {
+    assert(Object.hasOwn(postgresBefore.HostConfig.Tmpfs ?? {}, "/var/lib/postgresql/data"), "disposable PostgreSQL storage is configured as tmpfs");
+  }
+  const volumeBefore = disposable ? null : run("docker", ["volume", "inspect", postgresVolumeName, "--format", "{{.Name}}"]);
   const knownDemoIds = new Set(getDemoAccounts().map((account) => account.id));
   const newDemoIds = new Set();
   const baselineDataDigest = preservedDataDigest([]);
@@ -260,9 +261,19 @@ async function main() {
   // Remove only completed one-shot service containers; never remove named volumes.
   compose("rm", "-f", "demo-bootstrap", "example-client");
   compose("up", "--build", "-d");
+  if (disposable) {
+    // A rebuilt backend can be recreated with a different ephemeral host port.
+    const published = compose("port", "backend", "3000").trim().split("\n")[0].split(":").at(-1);
+    assert(/^[0-9]+$/.test(published ?? ""), "resolved the current disposable backend port after Compose startup");
+    const current = new URL(backendBaseUrl);
+    const previousPort = current.port;
+    current.port = published;
+    backendBaseUrl = current.origin;
+    if (previousPort !== published) console.log("PASS refreshed changed ephemeral backend port after image rebuild");
+  }
   await waitForBackend();
-  assert((await (await fetch("http://localhost:3000/health")).status) === 200, "/health returns HTTP 200");
-  assert((await (await fetch("http://localhost:3000/ready")).status) === 200, "/ready returns HTTP 200");
+  assert((await (await fetch(new URL("/health", backendBaseUrl))).status) === 200, "/health returns HTTP 200");
+  assert((await (await fetch(new URL("/ready", backendBaseUrl))).status) === 200, "/ready returns HTTP 200");
 
   const first = await verifyRun(knownDemoIds, newDemoIds);
   checkClientFailureExit();
@@ -283,7 +294,11 @@ async function main() {
   const second = await verifyRun(knownDemoIds, newDemoIds, first.keyDigest);
   assert(first.accountId !== second.accountId, "second demonstration uses a different fresh account");
   assert(preservedDataDigest([...newDemoIds]) === baselineDataDigest, "all PostgreSQL account, user, usage, and request data predating both demo runs is unchanged");
-  assert(run("docker", ["volume", "inspect", postgresVolumeName, "--format", "{{.Name}}"] ).trim() === volumeBefore.trim(), "the existing PostgreSQL named volume remains present");
+  if (!disposable) {
+    assert(run("docker", ["volume", "inspect", postgresVolumeName, "--format", "{{.Name}}"] ).trim() === volumeBefore.trim(), "the existing PostgreSQL named volume remains present");
+  } else {
+    assert(inspectContainer("postgres").Id === postgresBefore.Id, "the disposable PostgreSQL container and its tmpfs remain intact across demo reruns");
+  }
 
   const backend = inspectContainer("backend");
   const postgres = inspectContainer("postgres");

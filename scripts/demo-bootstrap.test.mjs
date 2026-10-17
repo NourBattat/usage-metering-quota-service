@@ -53,6 +53,7 @@ test("provisions a new account over HTTP and atomically hands off a mode-0400 ke
   assert.equal(keyInfo.mode & 0o777, 0o400);
   assert.equal(keyInfo.uid, CLIENT_UID);
   assert.equal(keyInfo.gid, CLIENT_GID);
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
   assert.deepEqual(await readdir(directory), ["account-api-key"]);
   assert.equal(requests, 1);
   assert.ok(messages.every((message) => !message.includes(PROVISIONING_TOKEN) && !message.includes(ACCOUNT_API_KEY)));
@@ -110,4 +111,25 @@ test("Compose separates bootstrap authority, client key file, and successful-sta
   const dockerignore = await readFile(new URL("../.dockerignore", import.meta.url), "utf8");
   assert.match(dockerignore, /^\.env$/m);
   assert.match(dockerignore, /^\.env\.\*$/m);
+});
+
+test("network failure clears stale key and temporary files while preserving unrelated files", async t => {
+  const directory = await makeSecretDirectory(t);
+  await writeFile(join(directory, "account-api-key"), ACCOUNT_API_KEY);
+  await writeFile(join(directory, ".account-api-key.previous.tmp"), ACCOUNT_API_KEY);
+  await writeFile(join(directory, "unrelated.txt"), "preserve");
+  await assert.rejects(runDemoBootstrap({
+    ...bootstrapOptions(directory),
+    fetchImplementation: async () => { throw new Error(`${PROVISIONING_TOKEN} ${ACCOUNT_API_KEY}`); },
+  }), error => error.message === "Could not reach the backend account-provisioning endpoint.");
+  assert.deepEqual(await readdir(directory), ["unrelated.txt"]);
+});
+
+test("malformed provisioning JSON leaves no handoff key", async t => {
+  const directory = await makeSecretDirectory(t);
+  await assert.rejects(runDemoBootstrap({
+    ...bootstrapOptions(directory),
+    fetchImplementation: async () => new Response("not-json", { status: 201 }),
+  }), /not valid JSON/);
+  assert.deepEqual(await readdir(directory), []);
 });

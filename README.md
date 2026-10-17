@@ -71,6 +71,7 @@ For the full scenario, expected output, and API call sequence, see [docs/example
 Build backend and CLI TypeScript, and run the unit/security tests:
 
 ```sh
+npm ci
 npm run build
 npm test
 ```
@@ -110,3 +111,21 @@ docker compose stop
 ```
 
 `docker compose down` also removes containers and the network but keeps named volumes unless `-v` is specified. Never run `docker compose down -v` when you need to preserve PostgreSQL data.
+
+## Authentication and internal errors
+
+Protected `/v1` endpoints use the account key in `x-api-key`. Account provisioning uses `POST /v1/accounts` with `x-provisioning-token`; the configured server-side token must be at least 32 characters. Provisioning returns the new account key once; PostgreSQL stores its SHA-256 hash. Treat the key as a secret.
+
+Unhandled HTTP 5xx errors return a generic message while preserving their HTTP status and standard response fields. Server logs retain safe HTTP status, request ID and SQLSTATE metadata, without raw database messages, SQL or connection credentials. Existing validation (4xx), quota rejection and explicitly defined operational error responses retain their own behavior.
+
+## Isolated clean acceptance verification
+
+From the repository root, with Node.js 22+, Docker/Compose access and the existing main stack running for read-only preservation checks:
+
+```sh
+npm run test:phase6c
+```
+
+This verifies a temporary copy of the **current working tree**, including uncommitted work. It installs dependencies, builds TypeScript and new Docker images without cache, and runs the regression suites and demo in a separate Compose project with temporary PostgreSQL storage. It does not rebuild or restart the main stack. Temporary test databases, containers, configuration and credentials are cleaned up without deleting persistent PostgreSQL volumes. New uniquely tagged test images remain locally. This is not a GitHub-clone verification.
+
+See [docs/phase-6c-acceptance.md](docs/phase-6c-acceptance.md) for scope, commands, acceptance evidence and remaining limitations. Full documentation completion and performance testing are separate phases.
